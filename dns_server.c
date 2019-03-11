@@ -40,18 +40,18 @@ SOFTWARE.
 #include <lwip/sys.h>
 #include <lwip/netdb.h>
 #include <lwip/dns.h>
+#include <lwip/ip4_addr.h>
 
 static const char TAG[] = "DNSSRV";
 
-
-
-
-
-void receive_thread(void *pvParameters) {
+static void dns_server_receive_task(void *parameters) {
     int socket_fd;
     struct sockaddr_in sa, ra;
+    tcpip_adapter_if_t tcpip_adapter = TCPIP_ADAPTER_IF_STA;
 
-
+    if(parameters != NULL) {
+        tcpip_adapter = *((tcpip_adapter_if_t*)parameters);
+    }
 
     socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (socket_fd < 0){
@@ -62,7 +62,8 @@ void receive_thread(void *pvParameters) {
     memset(&sa, 0, sizeof(struct sockaddr_in));
 
     tcpip_adapter_ip_info_t ip;
-    tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &ip);
+    tcpip_adapter_get_ip_info(tcpip_adapter, &ip);
+
     ra.sin_family = AF_INET;
     ra.sin_addr.s_addr = ip.ip.addr;
     ra.sin_port = htons(53);
@@ -78,9 +79,15 @@ void receive_thread(void *pvParameters) {
     int length;
     char data[80];
     char response[100];
-    char ipAddress[INET_ADDRSTRLEN];
+    char ip_address[INET_ADDRSTRLEN];
     int idx;
     int err;
+    ip4_addr_t device_ipaddress = ip.ip;
+    
+    // We always reply with the ip of the device, if set to 0.0.0.0, use the default 192.168.1.1.
+    if(ip4_addr_isany_val(device_ipaddress)) {
+        IP4_ADDR(&device_ipaddress, 192, 168, 1, 1);
+    } 
 
     ESP_LOGI(TAG, "DNS Server listening on 53/udp");
     while (1) {
@@ -88,8 +95,8 @@ void receive_thread(void *pvParameters) {
         if (length > 0) {
             data[length] = '\0';
 
-            inet_ntop(AF_INET, &(client.sin_addr), ipAddress, INET_ADDRSTRLEN);
-            ESP_LOGI(TAG, "Replying to DNS request (len=%d) from %s", length, ipAddress);
+            inet_ntop(AF_INET, &(client.sin_addr), ip_address, INET_ADDRSTRLEN);
+            ESP_LOGI(TAG, "Replying to DNS request (len=%d) from %s", length, ip_address);
 
             // Prepare our response
             response[0] = data[0];
@@ -135,11 +142,12 @@ void receive_thread(void *pvParameters) {
             response[idx+10] = 0x00;
             response[idx+11] = 0x04; //4 byte IP address
 
+            //
             //The IP address
-            response[idx + 12] = 192;
-            response[idx + 13] = 168;
-            response[idx + 14] = 1;
-            response[idx + 15] = 1;
+            response[idx + 12] = ip4_addr1(&device_ipaddress);
+            response[idx + 13] = ip4_addr2(&device_ipaddress);
+            response[idx + 14] = ip4_addr3(&device_ipaddress);
+            response[idx + 15] = ip4_addr4(&device_ipaddress);
 
             err = sendto(socket_fd, response, idx+16, 0, (struct sockaddr *)&client, client_len);
             if (err < 0) {
@@ -150,6 +158,10 @@ void receive_thread(void *pvParameters) {
     close(socket_fd);
 }
 
-void init_dns_server() {
-    xTaskCreate(&receive_thread, "receive_thread", 3048, NULL, 5, NULL);
+void init_dns_server(tcpip_adapter_if_t tcpip_adapter) {
+    static tcpip_adapter_if_t adapter = TCPIP_ADAPTER_IF_MAX;
+
+    adapter = tcpip_adapter;
+
+    xTaskCreate(&dns_server_receive_task, "dns_server_receive_task", 3048, &adapter, 5, NULL);
 }
