@@ -1,4 +1,6 @@
-# esp32-dns-server
+# espXX-dns-server
 
-Limitations:
-* Does not work when the esp32 has multiple IP interfaces (for example, STA+AP mode)
+Updated to work in STA+AP mode, you need to set the TCPIP adapter on init (either TCPIP_ADAPTER_IF_AP or TCPIP_ADAPTER_IF_STA).
+
+Notes:
+* Only tested on ESP8266.
