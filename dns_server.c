@@ -163,5 +163,6 @@ void init_dns_server(tcpip_adapter_if_t tcpip_adapter) {
 
     adapter = tcpip_adapter;
 
-    xTaskCreate(&dns_server_receive_task, "dns_server_receive_task", 3048, &adapter, 5, NULL);
+    // xTaskCreate(&dns_server_receive_task, "dns_server_receive_task", 3048, &adapter, 5, NULL);
+    xTaskCreate(&dns_server_receive_task, "dns_server_receive_task", 2048, &adapter, 5, NULL);
 }
